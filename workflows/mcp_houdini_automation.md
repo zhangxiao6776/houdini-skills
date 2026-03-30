@@ -355,20 +355,59 @@ frame_all
 frame_selection
 ```
 
-### 8.2 Screenshots for Verification
+### 8.2 Screenshots — CRITICAL Visibility Requirements
+
+**`capture_screenshot` and `render_viewport` use Houdini's `viewwrite` internally. This command REQUIRES the SceneViewer pane tab to be the active/visible tab.** If another tab (e.g., CompositorViewer for COPs) is active, the tool reports `"success": true` but **writes no file** — a silent failure with no error message.
+
+**COP/Copernicus images CANNOT be captured via `viewwrite` at all** — it returns `"No viewers found to write"`. The only way to capture COP output is through a `rop_image` render node.
+
+#### Capture by Context
+
+| Context | Method | Notes |
+|---------|--------|-------|
+| **3D viewport (SOPs)** | `capture_screenshot` or `render_viewport` | SceneViewer must be the **active tab** in its pane |
+| **COP/Copernicus output** | `rop_image` node → render to file → Read the file | The ONLY reliable method for COP images |
+| **Network editor** | `capture_network_editor /path` | Works independently of tab visibility |
+| **All 4 viewports** | `render_quad_view` | Requires SceneViewer visible |
+
+#### Ensuring SceneViewer is Visible (Before SOP Captures)
+
+If captures silently fail, the SceneViewer tab is likely hidden. Switch it to active first:
+
+```python
+execute_python """
+import hou
+desktop = hou.ui.curDesktop()
+viewer = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
+if viewer:
+    viewer.setIsCurrentTab()
+"""
+```
+
+Then call `capture_screenshot` or `render_viewport` — they will work.
+
+#### Capturing COP Output (The Correct Way)
 
 ```
-// Viewport capture
-capture_screenshot
+// Create rop_image in the COP network (NOT rop_comp — doesn't exist in Copernicus)
+create_cop_node /img/copnet1 rop_image name:render_out
+set_parameter /img/copnet1/render_out outputfilepath:"/tmp/cop_output.png"
 
-// High-res viewport render
-render_viewport width:1920 height:1080
+// Connect to the COP node you want to capture
+connect_nodes /img/copnet1/my_opencl_cop /img/copnet1/render_out
 
-// Network editor capture (great for documenting setups)
+// Render it
+execute_python "hou.node('/img/copnet1/render_out').render()"
+
+// Now read the image file for visual inspection
+```
+
+#### Network Editor Captures (Always Work)
+
+```
+// Great for documenting node graphs — no visibility requirement
 capture_network_editor /obj/geo1
-
-// All four viewport panes
-render_quad_view
+capture_network_editor /img/copnet1
 ```
 
 ### 8.3 Final Render
@@ -477,7 +516,60 @@ For any Houdini automation task, follow this sequence:
 
 ---
 
-## 12. Security Configuration
+## 12. MCP Server Lifecycle
+
+### Architecture
+
+```
+Claude Code (parent process)
+  └── fxhoudinimcp (child process, MCP server)
+        └── TCP connection → 127.0.0.1:8100
+
+Houdini FX (separate process)
+  └── Listening on port 8100 (started via shelf tool)
+```
+
+**The MCP server is a child of Claude Code, NOT Houdini.** It connects to Houdini's internal server on TCP port 8100 (localhost).
+
+### When You Quit Houdini
+
+1. Houdini's port 8100 listener dies
+2. The MCP server process **stays alive** (owned by Claude Code)
+3. MCP tool calls will fail with connection errors
+4. The MCP server process is cleaned up when the Claude Code session ends
+
+### Safe Shutdown
+
+```sh
+# Option 1: Just quit Houdini normally
+# MCP server harmlessly loses connection, dies with Claude Code session
+
+# Option 2: Kill MCP server explicitly (cleanest)
+pkill -f fxhoudinimcp
+# Then quit Houdini
+
+# Option 3: After Houdini is already closed
+pkill -f fxhoudinimcp
+```
+
+No "orphan server" risk — the MCP process is always parented to Claude Code.
+
+### Checking Status
+
+```sh
+# Is the MCP server running?
+pgrep -l -f fxhoudinimcp
+
+# What port is it using?
+lsof -i :8100 -P -n
+
+# Is Houdini still listening?
+lsof -i :8100 -P -n | grep LISTEN
+```
+
+---
+
+## 13. Security Configuration
 
 The MCP server is security-hardened:
 
@@ -488,7 +580,7 @@ The MCP server is security-hardened:
 
 ---
 
-## 13. Common Pitfalls
+## 14. Common Pitfalls
 
 | Pitfall | Fix |
 |---------|-----|
@@ -502,6 +594,9 @@ The MCP server is security-hardened:
 | Single node connections in loop | Use `connect_nodes_batch` for efficiency |
 | Not framing viewport | Call `frame_all` after building geometry |
 | Auto-start MCP on Houdini launch | Causes startup hang; use manual shelf tool |
+| `capture_screenshot` silently fails | SceneViewer must be the **active tab** — switch with `viewer.setIsCurrentTab()` first |
+| Trying to screenshot COP output | `viewwrite` can't capture COP viewer — use `rop_image` node to render to file |
+| MCP server lingers after Houdini quits | MCP is a child of Claude Code, not Houdini — `pkill -f fxhoudinimcp` to clean up |
 
 ---
 
@@ -515,3 +610,6 @@ The MCP server is security-hardened:
 | 2026-03-27 | Reaction-diffusion sim created through MCP tools | Verified |
 | 2026-03-27 | COP network with rop_image output | Verified |
 | 2026-03-27 | Houdini scene saved via save_scene | Verified |
+| 2026-03-29 | Screenshot failure root cause: SceneViewer must be active tab | Verified |
+| 2026-03-29 | COP viewer cannot be captured via viewwrite — use rop_image | Verified |
+| 2026-03-29 | MCP server lifecycle: child of Claude Code, TCP to Houdini:8100 | Verified |
