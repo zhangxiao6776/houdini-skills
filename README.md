@@ -39,9 +39,9 @@ A growing collection of [Claude Code](https://claude.ai/claude-code) skills for 
 ### Workflows — Cross-Domain
 | Skill | Description | Status |
 |-------|-------------|--------|
-| *mcp_houdini_automation* | Houdini MCP server patterns, node creation via MCP, scene inspection | Planned |
-| *ofx_plugin_integration* | OFX plugin development + Copernicus deployment pipeline | Planned |
-| *ai_inference_pipeline* | ONNX/CoreML/Python inference in Houdini (Depth, VDA, DeepBump) | Planned |
+| [mcp_houdini_automation.md](workflows/mcp_houdini_automation.md) | Houdini MCP server patterns (167 tools, 20 categories), node creation, VEX wrangles, USD/LOPs, COPs, simulation workflows, diagnostics. | **Active** |
+| [ofx_plugin_integration.md](workflows/ofx_plugin_integration.md) | OFX plugin development + Copernicus deployment. Architecture patterns (single-pass, two-pass, inference, server), build system, limitations, threading, cross-verification. | **Active** |
+| [ai_inference_pipeline.md](workflows/ai_inference_pipeline.md) | ONNX Runtime C++, Apple CoreML native, Python subprocess, persistent socket server. Binary IPC, model management, caching, tiled inference. | **Active** |
 
 ## Installation
 
